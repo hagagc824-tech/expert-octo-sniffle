@@ -8,52 +8,49 @@ app.use(express.json());
 
 const API_GOC = "https://merchant-query-bright-walter.trycloudflare.com/api/bcr";
 
+// Hàm bóc tách dữ liệu chuẩn theo cấu trúc API thực tế của bạn
 const processData = (rawData) => {
     const tables = {};
-    let listData = [];
-    if (Array.isArray(rawData)) {
-        listData = rawData;
-    } else if (rawData && typeof rawData === 'object') {
-        listData = rawData.data || rawData.list || rawData.results || [];
-    }
+    
+    // API gốc của bạn trả về dạng { code: 200, data: [...] }
+    const listData = rawData && rawData.data ? rawData.data : [];
 
     listData.forEach((item) => {
-        const tableName = item.tableName || item.tableId || item.tableNameEN || "Bàn Mặc Định";
-        
-        if (!tables[tableName]) {
-            tables[tableName] = {
-                ban: tableName,
-                cau: [], 
-                ti_le_nha_cai: "0%",
-                ti_le_nha_con: "0%",
-                ket_qua_phien_truoc: null
-            };
-        }
+        // Lấy chính xác mã bàn từ trường "ban" trong API gốc
+        const tableName = item.ban ? String(item.ban).trim() : null;
+        if (!tableName) return;
 
-        if (item.result) {
-            tables[tableName].cau.push(item.result);
-        }
-    });
+        // Chuyển chuỗi kết quả "BTPBP..." thành mảng ['B', 'T', 'P', 'B', 'P']
+        let stringResults = item.results || "";
+        const arrayCau = stringResults.split('');
 
-    Object.keys(tables).forEach((key) => {
-        const currentTable = tables[key];
-        const totalGames = currentTable.cau.length;
+        // Khởi tạo object bàn
+        tables[tableName] = {
+            ban: tableName,
+            cau: arrayCau, 
+            ti_le_nha_cai: "0%",
+            ti_le_nha_con: "0%",
+            ket_qua_phien_truoc: null
+        };
 
+        const totalGames = arrayCau.length;
         if (totalGames > 0) {
-            const bankerCount = currentTable.cau.filter(c => c === 'B' || c === 'Banker' || c === 'banker').length;
-            const playerCount = currentTable.cau.filter(c => c === 'P' || c === 'Player' || c === 'player').length;
+            // Đếm số lần xuất hiện thực tế dựa theo ký tự viết tắt
+            const bankerCount = arrayCau.filter(c => c === 'B').length;
+            const playerCount = arrayCau.filter(c => c === 'P').length;
 
-            currentTable.ti_le_nha_cai = `${((bankerCount / totalGames) * 100).toFixed(1)}%`;
-            currentTable.ti_le_nha_con = `${((playerCount / totalGames) * 100).toFixed(1)}%`;
+            tables[tableName].ti_le_nha_cai = `${((bankerCount / totalGames) * 100).toFixed(1)}%`;
+            tables[tableName].ti_le_nha_con = `${((playerCount / totalGames) * 100).toFixed(1)}%`;
             
-            currentTable.ket_qua_phien_truoc = currentTable.cau[totalGames - 1];
+            // Ký tự cuối cùng của chuỗi chính là kết quả phiên trước
+            tables[tableName].ket_qua_phien_truoc = arrayCau[totalGames - 1];
         }
     });
 
     return tables;
 };
 
-// 1. Link xem toàn bộ bàn
+// 1. Endpoint lấy toàn bộ các bàn
 app.get('/api/tables', async (req, res) => {
     try {
         const response = await axios.get(API_GOC, {
@@ -72,7 +69,7 @@ app.get('/api/tables', async (req, res) => {
     }
 });
 
-// 2. Link xem riêng từng bàn (Đã sửa logic tìm kiếm thông minh)
+// 2. Endpoint lấy chi tiết riêng từng bàn (Không phân biệt hoa thường)
 app.get('/api/tables/:tableName', async (req, res) => {
     try {
         const targetTable = req.params.tableName.toLowerCase().trim(); 
@@ -84,21 +81,19 @@ app.get('/api/tables/:tableName', async (req, res) => {
         const processedMap = processData(response.data);
         const allTableNames = Object.keys(processedMap);
 
-        // Tìm kiếm xem có tên bàn nào khớp hoặc chứa ký tự nhập vào không
+        // Tìm kiếm so khớp bàn
         const exactKey = allTableNames.find(name => name.toLowerCase() === targetTable);
-        const fuzzyKey = exactKey || allTableNames.find(name => name.toLowerCase().includes(targetTable));
 
-        if (fuzzyKey && processedMap[fuzzyKey]) {
+        if (exactKey && processedMap[exactKey]) {
             res.json({
                 success: true,
-                data: processedMap[fuzzyKey]
+                data: processedMap[exactKey]
             });
         } else {
-            // Nếu không tìm thấy, trả về danh sách tên bàn thực tế đang có để biết đường gõ
             res.status(404).json({
                 success: false,
                 message: `Không tìm thấy dữ liệu cho bàn: ${req.params.tableName}`,
-                Goi_Y_Cac_Ban_Dang_Hoat_Dong: allTableNames
+                danh_sach_ban_hien_co: allTableNames
             });
         }
     } catch (error) {
@@ -108,5 +103,5 @@ app.get('/api/tables/:tableName', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`API running on port ${PORT}`);
+    console.log(`Hệ thống chạy mượt tại port ${PORT}`);
 });
