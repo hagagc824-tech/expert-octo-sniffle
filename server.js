@@ -8,7 +8,6 @@ app.use(express.json());
 
 const API_GOC = "https://merchant-query-bright-walter.trycloudflare.com/api/bcr";
 
-// Hàm logic bóc tách dữ liệu gốc
 const processData = (rawData) => {
     const tables = {};
     let listData = [];
@@ -51,10 +50,10 @@ const processData = (rawData) => {
         }
     });
 
-    return tables; // Trả về object chứa các key bàn để lọc cho nhanh
+    return tables;
 };
 
-// 1. Link tổng hợp toàn bộ các bàn
+// 1. Link xem toàn bộ bàn
 app.get('/api/tables', async (req, res) => {
     try {
         const response = await axios.get(API_GOC, {
@@ -73,27 +72,33 @@ app.get('/api/tables', async (req, res) => {
     }
 });
 
-// 2. Link RIÊNG cho từng bàn (Dynamic Route)
+// 2. Link xem riêng từng bàn (Đã sửa logic tìm kiếm thông minh)
 app.get('/api/tables/:tableName', async (req, res) => {
     try {
-        const targetTable = req.params.tableName; // Lấy tên bàn từ link gọi vào
+        const targetTable = req.params.tableName.toLowerCase().trim(); 
         
         const response = await axios.get(API_GOC, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             timeout: 7000
         });
         const processedMap = processData(response.data);
-        
-        // Kiểm tra xem bàn này có tồn tại trong dữ liệu thực tế không
-        if (processedMap[targetTable]) {
+        const allTableNames = Object.keys(processedMap);
+
+        // Tìm kiếm xem có tên bàn nào khớp hoặc chứa ký tự nhập vào không
+        const exactKey = allTableNames.find(name => name.toLowerCase() === targetTable);
+        const fuzzyKey = exactKey || allTableNames.find(name => name.toLowerCase().includes(targetTable));
+
+        if (fuzzyKey && processedMap[fuzzyKey]) {
             res.json({
                 success: true,
-                data: processedMap[targetTable]
+                data: processedMap[fuzzyKey]
             });
         } else {
+            // Nếu không tìm thấy, trả về danh sách tên bàn thực tế đang có để biết đường gõ
             res.status(404).json({
                 success: false,
-                message: `Không tìm thấy dữ liệu cho bàn: ${targetTable}`
+                message: `Không tìm thấy dữ liệu cho bàn: ${req.params.tableName}`,
+                Goi_Y_Cac_Ban_Dang_Hoat_Dong: allTableNames
             });
         }
     } catch (error) {
